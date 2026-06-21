@@ -13,7 +13,7 @@ from sklearn.ensemble import (
     VotingClassifier,
 )
 from sklearn.linear_model import LinearRegression, Ridge, Lasso, LogisticRegression
-from sklearn.metrics import r2_score, f1_score
+from sklearn.metrics import r2_score, f1_score, confusion_matrix
 from sklearn.svm import SVR, SVC
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 
@@ -154,21 +154,28 @@ class ModelTrainer:
                 },
             }
 
-            risk_report = evaluate_classification_models(
+            risk_report, confusion_details = evaluate_classification_models(
                 X_train=X_train, y_train=y_train,
                 X_test=X_test, y_test=y_test,
                 models=classification_models, param=classification_params
             )
 
+            # Voting Classifier - combine only the strongest performers,
+            # since weak models (e.g. Logistic Regression) drag down a soft-vote average.
             voting_classifier = VotingClassifier(estimators=[
                 ('rf', classification_models["Random Forest"]),
                 ('gb', classification_models["Gradient Boosting"]),
-                ('lr', classification_models["Logistic Regression"])
+                ('dt', classification_models["Decision Tree"])
             ], voting='soft')
             voting_classifier.fit(X_train, y_train)
             voting_pred = voting_classifier.predict(X_test)
             risk_report["Voting Classifier"] = f1_score(y_test, voting_pred)
             classification_models["Voting Classifier"] = voting_classifier
+
+            tn, fp, fn, tp = confusion_matrix(y_test, voting_pred).ravel()
+            confusion_details["Voting Classifier"] = {
+                "TP": int(tp), "TN": int(tn), "FP": int(fp), "FN": int(fn)
+            }
 
             logging.info(f"Risk Model Report: {risk_report}")
             print("\n===== Invoice Risk Classification - F1 Scores =====")
@@ -176,15 +183,26 @@ class ModelTrainer:
                 print(f"{name}: {score:.4f}")
             print("=====================================================\n")
 
+            print("===== Confusion Matrix Breakdown (per model) =====")
+            print(f"{'Model':<22}{'TP':>6}{'TN':>6}{'FP':>6}{'FN':>6}")
+            for name, cm in confusion_details.items():
+                print(f"{name:<22}{cm['TP']:>6}{cm['TN']:>6}{cm['FP']:>6}{cm['FN']:>6}")
+            print("====================================================\n")
+
             rf_clf_model = classification_models["Random Forest"]
             if hasattr(rf_clf_model, 'oob_score_'):
                 print(f"Random Forest OOB Score (Risk): {rf_clf_model.oob_score_:.4f}\n")
 
-            best_score = max(risk_report.values())
-            best_name = max(risk_report, key=risk_report.get)
+            # Select best model by LOWEST FALSE NEGATIVES among models
+            # with reasonably strong F1 (>0.85), since missing a genuinely
+            # risky invoice is more costly than over-flagging a safe one.
+            strong_models = {k: v for k, v in risk_report.items() if v > 0.85}
+            best_name = min(strong_models, key=lambda k: confusion_details[k]["FN"])
+            best_score = risk_report[best_name]
             best_model = classification_models[best_name]
 
-            logging.info(f"Best risk model: {best_name} with F1 {best_score}")
+            logging.info(f"Best risk model (lowest FN among strong F1 models): {best_name}, F1={best_score}, FN={confusion_details[best_name]['FN']}")
+            print(f"Selected model: {best_name} (F1={best_score:.4f}, False Negatives={confusion_details[best_name]['FN']})\n")
 
             save_object(
                 file_path=self.model_trainer_config.risk_model_file_path,
