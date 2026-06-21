@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from src.exception import CustomException
 from src.logger import logging
 from src.components.data_transformation import DataTransformation
+from src.components.model_trainer import ModelTrainer
 
 
 @dataclass
@@ -152,6 +153,8 @@ class DataIngestion:
 
 
 
+
+
 if __name__ == "__main__":
     obj = DataIngestion()
     paths = obj.initiate_data_ingestion()
@@ -170,3 +173,11 @@ if __name__ == "__main__":
     )
     print("Risk train shape:", risk_train_arr.shape)
     print("Risk test shape:", risk_test_arr.shape)
+
+    model_trainer = ModelTrainer()
+
+    freight_best_name, freight_best_score = model_trainer.train_freight_model(freight_train_arr, freight_test_arr)
+    print(f"\nBest Freight Model: {freight_best_name} (R² = {freight_best_score:.4f})")
+
+    risk_best_name, risk_best_score = model_trainer.train_risk_model(risk_train_arr, risk_test_arr)
+    print(f"Best Risk Model: {risk_best_name} (F1 = {risk_best_score:.4f})")
