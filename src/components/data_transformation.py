@@ -18,6 +18,8 @@ from src.utils import save_object
 class DataTransformationConfig:
     freight_preprocessor_path: str = os.path.join('artifacts', "freight_preprocessor.pkl")
     risk_preprocessor_path: str = os.path.join('artifacts', "risk_preprocessor.pkl")
+    freight_vendor_map_path: str = os.path.join('artifacts', "freight_vendor_map.pkl")
+    risk_vendor_map_path: str = os.path.join('artifacts', "risk_vendor_map.pkl")
 
 
 class DataTransformation:
@@ -73,11 +75,13 @@ class DataTransformation:
         except Exception as e:
             raise CustomException(e, sys)
 
-    def apply_vendor_target_encoding(self, train_df, test_df, target_col):
+    def apply_vendor_target_encoding(self, train_df, test_df, target_col, save_path):
         """
         Replaces VendorName with the mean of `target_col` for that vendor,
         computed ONLY from training data, then mapped onto both train and test.
         Unseen vendors in test get the overall training mean (fallback).
+        Also saves the vendor_means + overall_mean as a pkl, so the deployed
+        app can apply the SAME encoding to a vendor name typed in by a user.
         """
         try:
             vendor_means = train_df.groupby('VendorName')[target_col].mean()
@@ -88,6 +92,11 @@ class DataTransformation:
 
             train_df = train_df.drop(columns=['VendorName'])
             test_df = test_df.drop(columns=['VendorName'])
+
+            save_object(
+                file_path=save_path,
+                obj={"vendor_means": vendor_means.to_dict(), "overall_mean": overall_mean}
+            )
 
             return train_df, test_df
 
@@ -104,7 +113,10 @@ class DataTransformation:
             test_df = self.engineer_freight_features(test_df)
             logging.info("Freight feature engineering completed")
 
-            train_df, test_df = self.apply_vendor_target_encoding(train_df, test_df, target_col="Freight")
+            train_df, test_df = self.apply_vendor_target_encoding(
+                train_df, test_df, target_col="Freight",
+                save_path=self.data_transformation_config.freight_vendor_map_path
+            )
             logging.info("Vendor target encoding applied (freight)")
 
             preprocessing_obj = self.get_freight_transformer_object()
@@ -176,7 +188,10 @@ class DataTransformation:
             train_df = train_df.drop(columns=['PONumber'])
             test_df = test_df.drop(columns=['PONumber'])
 
-            train_df, test_df = self.apply_vendor_target_encoding(train_df, test_df, target_col="flag_invoice")
+            train_df, test_df = self.apply_vendor_target_encoding(
+                train_df, test_df, target_col="flag_invoice",
+                save_path=self.data_transformation_config.risk_vendor_map_path
+            )
             logging.info("Vendor target encoding applied (risk)")
 
             preprocessing_obj = self.get_risk_transformer_object()
