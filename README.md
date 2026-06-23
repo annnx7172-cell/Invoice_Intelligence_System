@@ -1,171 +1,149 @@
-# Invoice Intelligence System
+# 📦 Invoice Intelligence System
 
-An end-to-end machine learning system that predicts **freight shipping costs** and assesses **invoice risk** for vendor purchase orders, built on a real SQLite procurement database.
+> *"Every invoice that slips through unchecked is a potential loss. Every one that gets flagged unnecessarily wastes someone's time. Can a machine find the balance?"*
 
-**Live App**: [invoiceintellegentsystem.streamlit.app](https://invoiceintellegentsystem-9okgtnwznqrrquao8kgtol.streamlit.app/)
+**Live App** → [invoiceintellegentsystem.streamlit.app](https://invoiceintellegentsystem-9okgtnwznqrrquao8kgtol.streamlit.app/)
+**GitHub** → [annnx7172-cell/Invoice_Intelligence_System](https://github.com/annnx7172-cell/Invoice_Intelligence_System)
 
-## Overview
+---
 
-This project works with a beverage distributor's procurement database (`inventory.db`), containing purchase orders, vendor invoices, and inventory records. It solves two related but distinct problems:
+## 🧩 The Problem
 
-1. **Freight Cost Prediction (Regression)** — Given an order's details, predict the expected shipping cost.
-2. **Invoice Risk Assessment (Classification)** — Given an invoice and its underlying purchase data, flag whether it should be reviewed for potential billing discrepancies or processing delays.
+Imagine you're running a beverage distribution company. Every month, hundreds of invoices arrive from your vendors — each one claiming a certain quantity was shipped, at a certain price, with a certain freight cost. Most of them are fine. But some aren't.
 
-## Data Source
+Maybe a vendor billed you for 500 cases but the warehouse only received 480. Maybe an invoice charges $6,200 but the actual purchase order totals $5,900. Maybe a shipment took two weeks to arrive when it usually takes seven days. Any of these could mean a billing error, a supply chain problem, or worse — overbilling.
 
-| Table | Rows | Used For | Key Columns |
-|---|---|---|---|
-| `vendor_invoice` | 5,543 | Freight regression (standalone) | VendorName, Quantity, Dollars, Freight, PODate, InvoiceDate, PayDate |
-| `purchases` | 2.37M | Joined into risk classification | PONumber, Brand, Quantity, Dollars, ReceivingDate |
+Manually checking every invoice against every purchase record is tedious, slow, and expensive. This project builds an automated system that does it for you — flagging the invoices that genuinely need a second look, while letting the clean ones through without friction.
 
-## Approach
+**This is not a toy problem. It's the kind of system logistics companies, procurement teams, and finance departments actually need.**
 
-### 1. Data Ingestion
-Two separate ingestion paths from the same SQLite database:
-- **Freight pipeline**: reads `vendor_invoice` directly via `SELECT * FROM vendor_invoice`.
-- **Risk pipeline**: joins `vendor_invoice` with an aggregated `purchases` subquery (grouped by `PONumber`) to compare what was invoiced against what was actually purchased and received.
+---
 
-### 2. Exploratory Data Analysis
-Key findings that shaped the modeling approach:
-- Freight cost correlates **0.985** with order value (Dollars), confirming order value as the dominant driver of shipping cost.
-- An initial "global top-25% Freight" risk definition was found to be biased — it disproportionately flagged large vendors (e.g., Diageo, Bacardi) simply because they place larger orders, not because they posed genuine risk.
-- This was corrected using **vendor-relative thresholds**, and ultimately replaced with a stronger, join-based definition (see below).
+## 💡 What This System Does
 
-### 3. Feature Engineering
-- Date columns converted into day-gap features (`days_po_to_invoice`, `days_invoice_to_pay`, `days_po_to_pay`).
-- `Quantity` and `Dollars` log-transformed to correct for heavy right-skew.
-- `VendorName` (127+ unique values) encoded using **target encoding** instead of one-hot encoding, computed only on training data to avoid leakage, reducing the freight feature space from 134 columns down to 7.
+This project solves **two problems at once**, using two separate machine learning models:
 
-### 4. Invoice Risk Label
-Built from the joined `vendor_invoice` + `purchases` data, an invoice is flagged risky if **either**:
-- The invoiced dollar amount differs from the summed item-level purchase dollars by more than $5 (billing mismatch), **or**
-- The average receiving delay for that purchase order exceeds 10 days (operational delay)
+| Task | Type | Question Answered |
+|---|---|---|
+| **Freight Cost Prediction** | Regression | "Given this order, how much should the shipping cost?" |
+| **Invoice Risk Assessment** | Classification | "Should this invoice be flagged for manual review?" |
 
-This produced a balanced target (~33% risky / 67% not risky) based on genuine operational signals, rather than order size alone.
+Both are served through a single, clean Streamlit interface — no technical knowledge required to use it.
 
-### 5. Model Training
-Both pipelines compare multiple algorithms — Linear/Ridge/Lasso, Decision Tree, Random Forest (with OOB scoring), Gradient Boosting, AdaBoost, SVM (SVR/SVC), and a Voting ensemble — tuned via `GridSearchCV`.
+---
 
-**Model selection for risk classification** prioritized **minimizing false negatives** (missed risky invoices) among models with F1 > 0.85, rather than picking purely on highest F1 — since failing to flag a genuinely risky invoice carries greater business cost than over-flagging a safe one.
+## 🏢 Business Context
 
-### 6. Deployment
-A two-tab **Streamlit** app serving both models, deployed on Streamlit Community Cloud.
+The dataset comes from a real procurement database (`inventory.db`) belonging to a **beverage distributor**. It contains five interconnected tables covering everything from purchase orders to inventory levels. This project works with two of them:
 
-## Results
+### Data Sources
 
-### Freight Cost Regression (R² Score)
+| Table | Size | What It Contains |
+|---|---|---|
+| `vendor_invoice` | 5,543 records | One row per invoice — vendor name, order value, freight cost, payment dates |
+| `purchases` | 2.37 million records | Individual line items — every brand, quantity, and price on every purchase order |
+
+The key insight that makes this project interesting: **these two tables tell different stories about the same orders**. The invoice says what the vendor claims was delivered and billed. The purchases table says what was actually ordered and received. When those stories don't match — that's a risk signal.
+
+---
+
+## 🔄 Project Workflow
+
+```
+SQLite Database
+      ↓
+Data Ingestion (two separate pipelines)
+      ↓
+Exploratory Data Analysis
+      ↓
+Feature Engineering (date gaps, log transforms, target encoding)
+      ↓
+Risk Label Construction (billing mismatch + receiving delay)
+      ↓
+Model Training (8 algorithms × GridSearchCV × two tasks)
+      ↓
+Model Selection (confusion matrix-driven, not just F1)
+      ↓
+Streamlit App → Live Deployment
+```
+
+---
+
+## 🛠️ Modular Programming
+
+The pipeline is built using a **modular, production-style structure** — each stage (ingestion, transformation, training) lives in its own independent file. This means any component can be updated, replaced, or tested without touching the rest of the system.
+
+---
+
+## 🔍 Key Findings from EDA
+
+- **Freight-Dollars correlation (0.985)** — order value is the single dominant driver of freight cost.
+- **Right-skewed distributions** — Quantity and Dollars required log-transformation before modeling.
+- **Vendor-biased risk label** — an initial global threshold disproportionately flagged large vendors; corrected using a join-based billing mismatch + receiving delay definition.
+- **High-cardinality VendorName** — 127+ unique vendors replaced One-Hot Encoding with Target Encoding, reducing feature space from 134 to 7 columns.
+
+---
+
+## 📊 Results
+
+### Freight Cost Regression — R² Scores
 
 | Model | R² Score |
 |---|---|
-| Ridge Regression | 0.8716 |
-| Lasso Regression | 0.8716 |
-| Decision Tree | 0.9631 |
-| Random Forest | 0.9712 |
-| **Gradient Boosting** | **0.9718** ✅ Selected |
-| AdaBoost Regressor | 0.9596 |
 | SVR | 0.8702 |
+| Ridge / Lasso | 0.8716 |
+| AdaBoost | 0.9596 |
+| Decision Tree | 0.9631 |
 | Voting Regressor | 0.9586 |
+| Random Forest | 0.9712 |
+| **Gradient Boosting** | **0.9718 ✅** |
 
-Random Forest OOB Score: 0.9652 (closely matches test R², confirming low overfitting)
+*Random Forest OOB Score: 0.9652 — closely matching its test R², confirming the model is not overfitting.*
 
-### Invoice Risk Classification (F1 Score + Confusion Matrix)
+### Invoice Risk Classification — F1 + Confusion Matrix
 
-| Model | F1 Score | TP | TN | FP | FN |
+| Model | F1 | TP | TN | FP | FN |
 |---|---|---|---|---|---|
 | Logistic Regression | 0.4749 | 137 | 669 | 70 | 233 |
+| AdaBoost | 0.5490 | 140 | 739 | 0 | 230 |
+| SVC | 0.7774 | 248 | 719 | 20 | 122 |
+| Gradient Boosting | 0.9021 | 304 | 739 | 0 | 66 |
 | Decision Tree | 0.9196 | 326 | 726 | 13 | 44 |
 | Random Forest | 0.9262 | 320 | 738 | 1 | 50 |
-| Gradient Boosting | 0.9021 | 304 | 739 | 0 | 66 |
-| AdaBoost Classifier | 0.5490 | 140 | 739 | 0 | 230 |
-| SVC | 0.7774 | 248 | 719 | 20 | 122 |
-| **Voting Classifier** | **0.9358** ✅ Selected | 328 | 736 | 3 | **42** |
+| **Voting Classifier** | **0.9358 ✅** | **328** | **736** | **3** | **42** |
 
-Selected model: **Voting Classifier** (Random Forest + Gradient Boosting + Decision Tree) — chosen for the lowest false-negative count among strong-performing models, balancing missed-risk minimization with F1 performance.
+*Random Forest OOB Score: 0.9614*
 
-## App Glossary
+**Why the Voting Classifier was selected over Random Forest (which had a higher F1)?**
+The model selection logic prioritized **minimizing False Negatives** (missed risky invoices) among models with F1 > 0.85. In business terms: failing to flag a genuinely risky invoice is far more costly than occasionally flagging a safe one for review. The Voting Classifier caught 328 risky invoices while only missing 42 — fewer missed cases than any other strong model, with just 3 false alarms.
 
-Terms used in the Streamlit app, explained:
+---
 
-| Term | Meaning |
+## 🧰 Tech Stack
+
+| Category | Tools |
 |---|---|
-| **PO (Purchase Order)** | The formal request a buyer sends to a vendor to order goods. Identified by a unique `PONumber`. |
-| **PODate** | The date the purchase order was created. |
-| **InvoiceDate** | The date the vendor issued the invoice (bill) for the order. |
-| **ReceivingDate** | The date the ordered items were physically received. |
-| **PayDate** | The date payment was made for the invoice. |
-| **Freight** | The shipping/delivery cost associated with an order. |
-| **Vendor Name** | The supplier the order was placed with. |
-| **Invoice Quantity** | The number of units stated on the vendor's invoice. |
-| **Invoice Dollars** | The dollar amount stated on the vendor's invoice. |
-| **Total Distinct Brands on PO** | Number of different product brands included in the same purchase order. |
-| **Total Item Quantity (from Purchases)** | Sum of quantities across all line items actually recorded in the `purchases` table for that PO — used to cross-check against the invoice. |
-| **Total Item Dollars (from Purchases)** | Sum of dollar amounts across all line items actually recorded in `purchases` for that PO — compared against Invoice Dollars to detect billing mismatches. |
-| **Avg. Receiving Delay** | Average number of days between the PO date and when items were received, across all line items on that PO. Can be a decimal since it's an average across multiple items. |
-| **Days: PO to Invoice** | Number of days between the purchase order date and the invoice date. |
-| **Days: Invoice to Pay** | Number of days between the invoice date and the payment date. |
-| **Flagged / Risky Invoice** | An invoice identified as warranting manual review due to a billing mismatch or abnormal receiving delay. |
+| Language | Python 3.11 |
+| Database | SQLite (via Python's built-in `sqlite3`) |
+| Data Processing | pandas, NumPy |
+| Machine Learning | scikit-learn (RF, GBM, SVM, Logistic Regression, Ensembles) |
+| Serialization | dill, pickle |
+| Web App | Streamlit |
+| Deployment | Streamlit Community Cloud |
+| Version Control | Git & GitHub |
 
-## Tech Stack
+---
 
-- **Language**: Python 3.11
-- **ML Libraries**: scikit-learn, pandas, NumPy
-- **Database**: SQLite (via Python's built-in `sqlite3`)
-- **Web App**: Streamlit
-- **Deployment**: Streamlit Community Cloud
-- **Version Control**: Git & GitHub
+## 🔮 Future Improvements
 
-## Project Structure
+- **Live database integration** — connect the app directly to a procurement database so it auto-fetches purchase-level details by PO number, making it usable by real operations teams without manual data entry.
+- **Operations Research for route and cost optimization** — extend beyond prediction into prescriptive analytics: use linear programming or vehicle routing algorithms to suggest the most cost-efficient shipping routes and vendor order schedules, complementing the freight cost predictions with actionable optimization.
+- **Anomaly scoring with vendor dashboards** — replace binary risk flags with a continuous risk probability score, and add vendor-level trend views showing which suppliers consistently generate billing discrepancies or receiving delays over time.
 
-```
-Invoice_Intelligence_System/
-├── notebook/
-│   ├── Data/
-│   │   └── inventory.db          # not tracked in git (size limit)
-│   └── 1. EDA.ipynb
-├── artifacts/
-│   ├── freight_model.pkl
-│   ├── freight_preprocessor.pkl
-│   ├── freight_vendor_map.pkl
-│   ├── risk_model.pkl
-│   ├── risk_preprocessor.pkl
-│   └── risk_vendor_map.pkl
-├── src/
-│   ├── components/
-│   │   ├── data_ingestion.py
-│   │   ├── data_transformation.py
-│   │   └── model_trainer.py
-│   ├── exception.py
-│   ├── logger.py
-│   └── utils.py
-├── app.py
-├── requirements.txt
-└── README.md
-```
+---
 
-## How to Run Locally
-
-```bash
-git clone https://github.com/annnx7172-cell/Invoice_Intelligence_System.git
-cd Invoice_Intelligence_System
-
-conda create -p venv python=3.11 -y
-conda activate ./venv
-
-pip install -r requirements.txt
-
-# Place inventory.db in notebook/Data/ before running ingestion
-python -m src.components.data_ingestion
-
-streamlit run app.py
-```
-
-## Key Learnings & Design Decisions
-
-- **Label definitions should be questioned, not assumed.** The first risk label (global Freight threshold) looked reasonable but was found to be biased toward large vendors. Validating label quality against the data before training is as important as model selection itself.
-- **High-cardinality categoricals need more than One-Hot Encoding.** With 127+ unique vendors, target encoding reduced the feature space dramatically while preserving vendor-specific signal.
-- **The "best" model isn't always the highest-scoring one.** For risk classification, minimizing false negatives was prioritized over raw F1, reflecting the real-world cost asymmetry between missing a risky invoice and over-flagging a safe one.
-
-## Author
+## 👩‍💻 Author
 
 **Ananya Singh**
+MSc Statistics and Computing (Machine Learning)
 GitHub: [@annnx7172-cell](https://github.com/annnx7172-cell)
