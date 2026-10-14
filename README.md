@@ -119,6 +119,23 @@ The model selection logic prioritized **minimizing False Negatives** (missed ris
 
 ---
 
+## 📈 Tableau Dashboard
+
+**Live Dashboard** → [Invoice Risk Intelligence Dashboard on Tableau Public](https://public.tableau.com/app/profile/ananya.singh2930/viz/InvoiceRiskIntelligenceDashboard__twbx/InvoiceRisk)
+
+Two dashboards built on the 5,543 invoices:
+
+- **Invoice Risk** — monthly risky-invoice trend, top 15 risky vendors, freight vs. invoice value (log scale), and an invoice-level detail table. A vendor dropdown filters every chart; clicking a vendor bar or a month drills down to the matching invoices.
+- **Models Comparison** — R² (freight) and F1 (risk) for every model trained, with the selected model highlighted.
+
+**Data notes**
+- The dashboard is limited to **Jan–Sep 2024**. From Oct 2024 onward invoice totals stop reconciling with purchase totals (about 98% mismatch vs. 0% before), which pushes the risk rate to about 99%. This looks like a purchases-join issue, not real risk, so those months are excluded.
+- The risk label is a rule on invoice-vs-purchase dollars and receiving delay, which are also model inputs. High F1 therefore reflects how well the models learn that rule.
+
+Regenerate the dashboard data with `python export_for_tableau.py` (writes `tableau/invoice_dashboard_data.csv`). Model scores are in `tableau/model_comparison.csv`.
+
+---
+
 ## 🧰 Tech Stack
 
 | Category | Tools |
