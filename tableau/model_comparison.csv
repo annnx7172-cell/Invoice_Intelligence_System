@@ -1,0 +1,17 @@
+task,metric,model,score,is_selected
+Freight (regression),R²,Linear Regression,0.8716,Other
+Freight (regression),R²,Ridge Regression,0.8716,Other
+Freight (regression),R²,Lasso Regression,0.8716,Other
+Freight (regression),R²,Decision Tree,0.9625,Other
+Freight (regression),R²,Random Forest,0.9699,Other
+Freight (regression),R²,Gradient Boosting,0.9718,Selected
+Freight (regression),R²,AdaBoost Regressor,0.9609,Other
+Freight (regression),R²,SVR,0.8702,Other
+Freight (regression),R²,Voting Regressor,0.959,Other
+Invoice Risk (classification),F1,Logistic Regression,0.4749,Other
+Invoice Risk (classification),F1,Decision Tree,0.914,Other
+Invoice Risk (classification),F1,Random Forest,0.9215,Other
+Invoice Risk (classification),F1,Gradient Boosting,0.9021,Other
+Invoice Risk (classification),F1,AdaBoost Classifier,0.549,Other
+Invoice Risk (classification),F1,SVC,0.7774,Other
+Invoice Risk (classification),F1,Voting Classifier,0.933,Selected
