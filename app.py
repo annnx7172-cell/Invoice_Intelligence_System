@@ -53,24 +53,19 @@ with tab1:
         freight_model, freight_preprocessor, freight_vendor_map = load_freight_artifacts()
         known_vendors = sorted(freight_vendor_map["vendor_means"].keys())
 
+        st.caption("Uses only information available when the order is placed.")
         col1, col2 = st.columns(2)
         with col1:
             vendor_name = st.selectbox("Vendor Name", known_vendors, key="freight_vendor")
             quantity = st.number_input("Quantity", min_value=1, value=100, key="freight_qty")
-            dollars = st.number_input("Order Value (Dollars)", min_value=1.0, value=5000.0, key="freight_dollars")
 
         with col2:
-            days_po_to_invoice = st.number_input("Days: PO to Invoice", min_value=0, value=16, key="freight_d1")
-            days_invoice_to_pay = st.number_input("Days: Invoice to Pay", min_value=0, value=35, key="freight_d2")
-            days_po_to_pay = st.number_input("Days: PO to Pay (total)", min_value=0, value=52, key="freight_d3")
+            dollars = st.number_input("Order Value (Dollars)", min_value=1.0, value=5000.0, key="freight_dollars")
 
         if st.button("Predict Freight Cost", type="primary"):
             input_df = pd.DataFrame({
                 "Quantity_log": [np.log1p(quantity)],
                 "Dollars_log": [np.log1p(dollars)],
-                "days_po_to_invoice": [days_po_to_invoice],
-                "days_invoice_to_pay": [days_invoice_to_pay],
-                "days_po_to_pay": [days_po_to_pay],
                 "VendorName_encoded": [encode_vendor(vendor_name, freight_vendor_map)]
             })
 

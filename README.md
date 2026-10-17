@@ -90,15 +90,15 @@ The pipeline is built using a **modular, production-style structure** — each s
 
 | Model | R² Score |
 |---|---|
-| SVR | 0.8702 |
-| Ridge / Lasso | 0.8716 |
-| AdaBoost | 0.9596 |
-| Decision Tree | 0.9631 |
-| Voting Regressor | 0.9586 |
-| Random Forest | 0.9712 |
-| **Gradient Boosting** | **0.9718 ✅** |
+| SVR | 0.8886 |
+| Linear / Ridge / Lasso | 0.8695 / 0.8697 / 0.8704 |
+| Decision Tree | 0.9492 |
+| AdaBoost | 0.9606 |
+| Voting Regressor | 0.9567 |
+| Gradient Boosting | 0.9660 |
+| **Random Forest** | **0.9715 ✅** |
 
-*Random Forest OOB Score: 0.9652 — closely matching its test R², confirming the model is not overfitting.*
+*Features are order-time only (quantity, dollars, vendor), so the model can estimate freight before an invoice or payment exists. The vendor is target-encoded out-of-fold with smoothing, and the winner is chosen by 5-fold cross-validated R² on the training data (CV R² 0.9709), not on the test set. Random Forest OOB Score: 0.9703 — closely matching its test R², confirming the model is not overfitting.*
 
 ### Invoice Risk Classification — F1 + Confusion Matrix
 

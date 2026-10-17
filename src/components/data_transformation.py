@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
+from sklearn.model_selection import KFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -32,14 +33,10 @@ class DataTransformation:
 
     def engineer_freight_features(self, df):
         try:
-            df['PODate'] = pd.to_datetime(df['PODate'])
-            df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-            df['PayDate'] = pd.to_datetime(df['PayDate'])
-
-            df['days_po_to_invoice'] = (df['InvoiceDate'] - df['PODate']).dt.days
-            df['days_invoice_to_pay'] = (df['PayDate'] - df['InvoiceDate']).dt.days
-            df['days_po_to_pay'] = (df['PayDate'] - df['PODate']).dt.days
-
+            # LEAKAGE FIX: the invoice/payment date gaps (days_po_to_invoice,
+            # days_invoice_to_pay, days_po_to_pay) are only known AFTER the order
+            # is billed/paid, so they cannot be used to estimate freight. Only
+            # order-time information (quantity, dollars, vendor) is kept.
             df['Quantity_log'] = np.log1p(df['Quantity'])
             df['Dollars_log'] = np.log1p(df['Dollars'])
 
@@ -57,7 +54,6 @@ class DataTransformation:
             # so it's treated as numerical here, not passed through OneHotEncoder.
             numerical_columns = [
                 "Quantity_log", "Dollars_log",
-                "days_po_to_invoice", "days_invoice_to_pay", "days_po_to_pay",
                 "VendorName_encoded"
             ]
 
@@ -75,19 +71,62 @@ class DataTransformation:
         except Exception as e:
             raise CustomException(e, sys)
 
-    def apply_vendor_target_encoding(self, train_df, test_df, target_col, save_path):
+    @staticmethod
+    def _smoothed_vendor_means(df, target_col, overall_mean, smoothing):
+        """Vendor mean shrunk towards the overall mean: (n*mean + m*overall) / (n + m)."""
+        stats = df.groupby('VendorName')[target_col].agg(['sum', 'count'])
+        return (stats['sum'] + smoothing * overall_mean) / (stats['count'] + smoothing)
+
+    def apply_vendor_target_encoding(self, train_df, test_df, target_col, save_path,
+                                     smoothing=10, n_splits=5, out_of_fold=True):
         """
-        Replaces VendorName with the mean of `target_col` for that vendor,
-        computed ONLY from training data, then mapped onto both train and test.
-        Unseen vendors in test get the overall training mean (fallback).
-        Also saves the vendor_means + overall_mean as a pkl, so the deployed
-        app can apply the SAME encoding to a vendor name typed in by a user.
+        Replaces VendorName with a smoothed mean of `target_col` for that vendor.
+
+        LEAKAGE FIX: a plain vendor mean computed on the training set contains each
+        training row's own target, so the encoded feature leaks the label (worst for
+        vendors with few invoices). Here:
+          * TRAIN rows are encoded out-of-fold: each row's value is computed from the
+            other folds only, so it never sees its own target.
+          * Means are smoothed towards the overall mean, so rare vendors are not
+            driven by one or two invoices.
+          * TEST rows (and the app) use the smoothed map fitted on the full training
+            set. Unseen vendors get the overall training mean.
+        The map is saved as a pkl so the deployed app applies the SAME encoding.
         """
         try:
-            vendor_means = train_df.groupby('VendorName')[target_col].mean()
+            if not out_of_fold:
+                # Original behaviour (risk pipeline): plain vendor mean from the full
+                # training set, applied to train and test alike.
+                vendor_means = train_df.groupby('VendorName')[target_col].mean()
+                overall_mean = train_df[target_col].mean()
+
+                train_df['VendorName_encoded'] = train_df['VendorName'].map(vendor_means)
+                test_df['VendorName_encoded'] = test_df['VendorName'].map(vendor_means).fillna(overall_mean)
+
+                train_df = train_df.drop(columns=['VendorName'])
+                test_df = test_df.drop(columns=['VendorName'])
+
+                save_object(
+                    file_path=save_path,
+                    obj={"vendor_means": vendor_means.to_dict(), "overall_mean": overall_mean}
+                )
+                return train_df, test_df
+
             overall_mean = train_df[target_col].mean()
 
-            train_df['VendorName_encoded'] = train_df['VendorName'].map(vendor_means)
+            vendor_means = self._smoothed_vendor_means(train_df, target_col, overall_mean, smoothing)
+
+            oof_encoded = np.full(len(train_df), overall_mean, dtype=float)
+            kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+            for fit_idx, enc_idx in kf.split(train_df):
+                fold_fit = train_df.iloc[fit_idx]
+                fold_overall = fold_fit[target_col].mean()
+                fold_means = self._smoothed_vendor_means(fold_fit, target_col, fold_overall, smoothing)
+                oof_encoded[enc_idx] = (
+                    train_df.iloc[enc_idx]['VendorName'].map(fold_means).fillna(fold_overall).values
+                )
+
+            train_df['VendorName_encoded'] = oof_encoded
             test_df['VendorName_encoded'] = test_df['VendorName'].map(vendor_means).fillna(overall_mean)
 
             train_df = train_df.drop(columns=['VendorName'])
@@ -190,7 +229,8 @@ class DataTransformation:
 
             train_df, test_df = self.apply_vendor_target_encoding(
                 train_df, test_df, target_col="flag_invoice",
-                save_path=self.data_transformation_config.risk_vendor_map_path
+                save_path=self.data_transformation_config.risk_vendor_map_path,
+                out_of_fold=False
             )
             logging.info("Vendor target encoding applied (risk)")
 

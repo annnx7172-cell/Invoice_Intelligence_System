@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -14,18 +15,23 @@ from sklearn.ensemble import (
 )
 from sklearn.linear_model import LinearRegression, Ridge, Lasso, LogisticRegression
 from sklearn.metrics import r2_score, f1_score, confusion_matrix
+from sklearn.model_selection import KFold, cross_val_score
 from sklearn.svm import SVR, SVC
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 
 from src.exception import CustomException
 from src.logger import logging
-from src.utils import save_object, evaluate_models, evaluate_classification_models
+from src.utils import (
+    save_object, evaluate_models, evaluate_classification_models,
+    CV_SPLITS, RANDOM_STATE,
+)
 
 
 @dataclass
 class ModelTrainerConfig:
     freight_model_file_path = os.path.join("artifacts", "freight_model.pkl")
     risk_model_file_path = os.path.join("artifacts", "risk_model.pkl")
+    report_file_path = os.path.join("artifacts", "model_report.json")
 
 
 class ModelTrainer:
@@ -43,14 +49,15 @@ class ModelTrainer:
             X_train, y_train = train_array[:, :-1], train_array[:, -1]
             X_test, y_test = test_array[:, :-1], test_array[:, -1]
 
+            rs = RANDOM_STATE
             regression_models = {
                 "Linear Regression": LinearRegression(),
                 "Ridge Regression": Ridge(),
                 "Lasso Regression": Lasso(),
-                "Decision Tree": DecisionTreeRegressor(),
-                "Random Forest": RandomForestRegressor(oob_score=True),
-                "Gradient Boosting": GradientBoostingRegressor(),
-                "AdaBoost Regressor": AdaBoostRegressor(),
+                "Decision Tree": DecisionTreeRegressor(random_state=rs),
+                "Random Forest": RandomForestRegressor(oob_score=True, random_state=rs),
+                "Gradient Boosting": GradientBoostingRegressor(random_state=rs),
+                "AdaBoost Regressor": AdaBoostRegressor(random_state=rs),
                 "SVR": SVR(),
             }
 
@@ -74,7 +81,7 @@ class ModelTrainer:
                 },
             }
 
-            freight_report = evaluate_models(
+            cv_report, test_report = evaluate_models(
                 X_train=X_train, y_train=y_train,
                 X_test=X_test, y_test=y_test,
                 models=regression_models, param=regression_params
@@ -85,33 +92,40 @@ class ModelTrainer:
                 ('gb', regression_models["Gradient Boosting"]),
                 ('lasso', regression_models["Lasso Regression"])
             ])
+            cv = KFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+            cv_report["Voting Regressor"] = cross_val_score(
+                voting_regressor, X_train, y_train, cv=cv, scoring="r2"
+            ).mean()
             voting_regressor.fit(X_train, y_train)
-            voting_pred = voting_regressor.predict(X_test)
-            freight_report["Voting Regressor"] = r2_score(y_test, voting_pred)
+            test_report["Voting Regressor"] = r2_score(y_test, voting_regressor.predict(X_test))
             regression_models["Voting Regressor"] = voting_regressor
 
-            logging.info(f"Freight Model Report: {freight_report}")
-            print("\n===== Freight Regression - R² Scores =====")
-            for name, score in freight_report.items():
-                print(f"{name}: {score:.4f}")
-            print("============================================\n")
+            logging.info(f"Freight CV report: {cv_report}")
+            logging.info(f"Freight test report: {test_report}")
+            print("\n===== Freight Regression - R² (CV on train | held-out test) =====")
+            for name in cv_report:
+                print(f"{name:<22} CV: {cv_report[name]:.4f} | Test: {test_report[name]:.4f}")
+            print("====================================================================\n")
 
             rf_model = regression_models["Random Forest"]
             if hasattr(rf_model, 'oob_score_'):
                 print(f"Random Forest OOB Score (Freight): {rf_model.oob_score_:.4f}\n")
 
-            best_score = max(freight_report.values())
-            best_name = max(freight_report, key=freight_report.get)
+            # Selection uses cross-validated R² on the training data, NOT the test set.
+            best_name = max(cv_report, key=cv_report.get)
             best_model = regression_models[best_name]
+            best_test_score = test_report[best_name]
 
-            logging.info(f"Best freight model: {best_name} with R² {best_score}")
+            logging.info(f"Best freight model (by CV R²): {best_name}, CV R²={cv_report[best_name]}, test R²={best_test_score}")
+            print(f"Selected model: {best_name} (CV R²={cv_report[best_name]:.4f}, held-out test R²={best_test_score:.4f})\n")
 
             save_object(
                 file_path=self.model_trainer_config.freight_model_file_path,
                 obj=best_model
             )
+            self._save_report("freight", best_name, cv_report, test_report)
 
-            return best_name, best_score
+            return best_name, best_test_score
 
         except Exception as e:
             raise CustomException(e, sys)
@@ -213,3 +227,16 @@ class ModelTrainer:
 
         except Exception as e:
             raise CustomException(e, sys)
+
+    # =====================================================================
+
+    def _save_report(self, task, selected, cv_report, test_report, **extra):
+        """Keeps the final numbers in one place so README/dashboards can quote them."""
+        path = self.model_trainer_config.report_file_path
+        report = {}
+        if os.path.exists(path):
+            with open(path) as f:
+                report = json.load(f)
+        report[task] = {"selected": selected, "cv": cv_report, "test": test_report, **extra}
+        with open(path, "w") as f:
+            json.dump(report, f, indent=2)

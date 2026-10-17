@@ -1,0 +1,27 @@
+{
+  "freight": {
+    "selected": "Random Forest",
+    "cv": {
+      "Linear Regression": 0.8549605281145676,
+      "Ridge Regression": 0.8550986747034617,
+      "Lasso Regression": 0.8550669252535711,
+      "Decision Tree": 0.9556798755037927,
+      "Random Forest": 0.9708944938085959,
+      "Gradient Boosting": 0.965717152380269,
+      "AdaBoost Regressor": 0.957883342358732,
+      "SVR": 0.8806979026934723,
+      "Voting Regressor": 0.959368685422465
+    },
+    "test": {
+      "Linear Regression": 0.869533566509179,
+      "Ridge Regression": 0.8696765482031598,
+      "Lasso Regression": 0.8704486815008111,
+      "Decision Tree": 0.9491808446852016,
+      "Random Forest": 0.9714612957838797,
+      "Gradient Boosting": 0.9659643055019542,
+      "AdaBoost Regressor": 0.9606223960092881,
+      "SVR": 0.8886111289378397,
+      "Voting Regressor": 0.9566940993861571
+    }
+  }
+}
