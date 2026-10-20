@@ -114,8 +114,8 @@ The pipeline is built using a **modular, production-style structure** — each s
 
 *Random Forest OOB Score: 0.9614*
 
-**Why the Voting Classifier was selected over Random Forest (which had a higher F1)?**
-The model selection logic prioritized **minimizing False Negatives** (missed risky invoices) among models with F1 > 0.85. In business terms: failing to flag a genuinely risky invoice is far more costly than occasionally flagging a safe one for review. The Voting Classifier caught 328 risky invoices while only missing 42 — fewer missed cases than any other strong model, with just 3 false alarms.
+**Why the Voting Classifier was selected over Random Forest?**
+The model selection logic prioritized **minimizing False Negatives** (missed risky invoices) among models with F1 > 0.85. In business terms: failing to flag a genuinely risky invoice is far more costly than occasionally flagging a safe one for review. The Voting Classifier caught 328 risky invoices while only missing 42 — fewer missed cases than any other strong model, with just 3 false alarms. It also had the highest F1 (0.9358 vs 0.9262 for Random Forest), so it won on both measures.
 
 ---
 
